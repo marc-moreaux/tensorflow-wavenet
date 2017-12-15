@@ -93,6 +93,7 @@ class AudioReader(object):
                  coord,
                  sample_rate,
                  gc_enabled,
+                 classification_enabled,
                  receptive_field,
                  sample_size=None,
                  silence_threshold=None,
@@ -104,6 +105,7 @@ class AudioReader(object):
         self.receptive_field = receptive_field
         self.silence_threshold = silence_threshold
         self.gc_enabled = gc_enabled
+        self.classification_enabled=classification_enabled
         self.threads = []
         self.sample_placeholder = tf.placeholder(dtype=tf.float32, shape=None)
         self.queue = tf.PaddingFIFOQueue(queue_size,
@@ -111,7 +113,8 @@ class AudioReader(object):
                                          shapes=[(None, 1)])
         self.enqueue = self.queue.enqueue([self.sample_placeholder])
 
-        if self.gc_enabled:
+        if self.gc_enabled or self.classification_enabled:
+            # Create Queue for class id
             self.id_placeholder = tf.placeholder(dtype=tf.int32, shape=())
             self.gc_queue = tf.PaddingFIFOQueue(queue_size, ['int32'],
                                                 shapes=[()])
@@ -128,8 +131,11 @@ class AudioReader(object):
                              "do not conform to pattern having id.")
         # Determine the number of mutually-exclusive categories we will
         # accomodate in our embedding table.
-        if self.gc_enabled:
+        if self.gc_enabled or self.classification_enabled:
             _, self.gc_category_cardinality = get_category_cardinality(files)
+            if self.classification_enabled:
+                _min, _max = get_category_cardinality(files)
+                self.gc_category_cardinality = int(_max - _min - 1)
             # Add one to the largest index to get the number of categories,
             # since tf.nn.embedding_lookup expects zero-indexing. This
             # means one or more at the bottom correspond to unused entries
@@ -181,13 +187,13 @@ class AudioReader(object):
                         sess.run(self.enqueue,
                                  feed_dict={self.sample_placeholder: piece})
                         audio = audio[self.sample_size:, :]
-                        if self.gc_enabled:
+                        if self.gc_enabled or self.classification_enabled:
                             sess.run(self.gc_enqueue, feed_dict={
                                 self.id_placeholder: category_id})
                 else:
                     sess.run(self.enqueue,
                              feed_dict={self.sample_placeholder: audio})
-                    if self.gc_enabled:
+                    if self.gc_enabled or self.classification_enabled:
                         sess.run(self.gc_enqueue,
                                  feed_dict={self.id_placeholder: category_id})
 

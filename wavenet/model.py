@@ -56,7 +56,8 @@ class WaveNetModel(object):
                  initial_filter_width=32,
                  histograms=False,
                  global_condition_channels=None,
-                 global_condition_cardinality=None):
+                 global_condition_cardinality=None,
+                 n_classes=None):
         '''Initializes the WaveNet model.
 
         Args:
@@ -108,6 +109,8 @@ class WaveNetModel(object):
         self.histograms = histograms
         self.global_condition_channels = global_condition_channels
         self.global_condition_cardinality = global_condition_cardinality
+        self.n_classes = n_classes
+        self.do_classification = n_classes is not None
 
         self.receptive_field = WaveNetModel.calculate_receptive_field(
             self.filter_width, self.dilations, self.scalar_input,
@@ -222,6 +225,12 @@ class WaveNetModel(object):
                 current['postprocess2'] = create_variable(
                     'postprocess2',
                     [1, self.skip_channels, self.quantization_channels])
+                current['postprocess3'] = create_variable(
+                    'postprocess3',
+                    [1, self.skip_channels, self.skip_channels])
+                current['postprocess4'] = create_variable(
+                    'postprocess4',
+                    [1, self.skip_channels, self.n_classes])
                 if self.use_biases:
                     current['postprocess1_bias'] = create_bias_variable(
                         'postprocess1_bias',
@@ -229,6 +238,12 @@ class WaveNetModel(object):
                     current['postprocess2_bias'] = create_bias_variable(
                         'postprocess2_bias',
                         [self.quantization_channels])
+                    current['postprocess3_bias'] = create_bias_variable(
+                        'postprocess3_bias',
+                        [self.skip_channels])
+                    current['postprocess4_bias'] = create_bias_variable(
+                        'postprocess4_bias',
+                        [self.n_classes])
                 var['postprocessing'] = current
 
         return var
@@ -424,6 +439,12 @@ class WaveNetModel(object):
             if self.use_biases:
                 b1 = self.variables['postprocessing']['postprocess1_bias']
                 b2 = self.variables['postprocessing']['postprocess2_bias']
+            if self.do_classification:
+                w3 = self.variables['postprocessing']['postprocess3']
+                w4 = self.variables['postprocessing']['postprocess4']
+                if self.use_biases:
+                    b3 = self.variables['postprocessing']['postprocess3_bias']
+                    b4 = self.variables['postprocessing']['postprocess4_bias']
 
             if self.histograms:
                 tf.histogram_summary('postprocess1_weights', w1)
@@ -444,7 +465,18 @@ class WaveNetModel(object):
             if self.use_biases:
                 conv2 = tf.add(conv2, b2)
 
-        return conv2
+            conv3 = None
+            if self.do_classification:
+                transformed1 = tf.nn.selu(total)
+                conv1 = tf.nn.conv1d(transformed1, w3, stride=1, padding="SAME")
+                if self.use_biases:
+                    conv1 = tf.add(conv1, b3)
+                transformed2 = tf.nn.selu(conv1)
+                conv2_bis = tf.nn.conv1d(transformed2, w4, stride=1, padding="SAME")
+                if self.use_biases:
+                    conv2_bis = tf.add(conv2_bis, b4)
+
+        return conv2, conv2_bis
 
     def _create_generator(self, input_batch, global_condition_batch):
         '''Construct an efficient incremental generator.'''
@@ -647,7 +679,7 @@ class WaveNetModel(object):
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
 
-            raw_output = self._create_network(network_input, gc_embedding)
+            raw_output, class_output = self._create_network(network_input, gc_embedding)
 
             with tf.name_scope('loss'):
                 # Cut off the samples corresponding to the receptive field
@@ -664,10 +696,36 @@ class WaveNetModel(object):
                                         [-1, self.quantization_channels])
                 loss = tf.nn.softmax_cross_entropy_with_logits(
                     logits=prediction,
-                    labels=target_output)
-                reduced_loss = tf.reduce_mean(loss)
+                    labels=target_output,
+                    name='reconstruction_loss')
 
+                reduced_loss = tf.reduce_mean(loss)
                 tf.summary.scalar('loss', reduced_loss)
+
+                if self.do_classification:
+                    all_ones = class_output[:, :, 0]
+                    all_ones = tf.cast((all_ones * 0 + 1), tf.int32)
+                    to_ids = tf.transpose(all_ones) * (global_condition_batch - 255)
+                    to_ids = tf.transpose(to_ids)
+                    to_ids = tf.one_hot(to_ids, 151)
+                    gt_output = tf.reshape(to_ids,
+                                           [-1, self.n_classes])
+                    class_pred = tf.reshape(class_output,
+                                            [-1, self.n_classes])
+                    class_loss = tf.nn.softmax_cross_entropy_with_logits(
+                        logits=class_pred,
+                        labels=gt_output,
+                        name='classification_loss')
+                    self.gt_output = gt_output
+                    self.class_pred = class_pred
+
+                    reduced_c_loss = tf.reduce_mean(class_loss)
+                    tf.summary.scalar('class_loss', reduced_c_loss)
+                    l2_loss = 1e-4 * (tf.nn.l2_loss(self.variables['postprocessing']['postprocess3']) + 
+                                      tf.nn.l2_loss(self.variables['postprocessing']['postprocess4']))
+                    loss = .9 * loss + .1 * class_loss + l2_loss
+                    reduced_loss = tf.reduce_mean(loss)
+                    tf.summary.scalar('total_loss', reduced_loss)
 
                 if l2_regularization_strength is None:
                     return reduced_loss
