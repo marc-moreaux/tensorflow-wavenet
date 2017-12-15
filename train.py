@@ -23,7 +23,7 @@ BATCH_SIZE = 1
 DATA_DIRECTORY = './VCTK-Corpus'
 LOGDIR_ROOT = './logdir'
 CHECKPOINT_EVERY = 50
-NUM_STEPS = int(1e5)
+NUM_STEPS = int(1e6)
 LEARNING_RATE = 1e-3
 WAVENET_PARAMS = './wavenet_params.json'
 STARTED_DATESTRING = "{0:%Y-%m-%dT%H-%M-%S}".format(datetime.now())
@@ -103,6 +103,9 @@ def get_arguments():
     parser.add_argument('--max_checkpoints', type=int, default=MAX_TO_KEEP,
                         help='Maximum amount of checkpoints that will be kept alive. Default: '
                              + str(MAX_TO_KEEP) + '.')
+    parser.add_argument('--classification_enabled', type=bool, default=False,
+                        help='Train on both prediction and class information. Default: False'
+                             + str(MAX_TO_KEEP) + '.')    
     return parser.parse_args()
 
 
@@ -220,6 +223,7 @@ def main():
             coord,
             sample_rate=wavenet_params['sample_rate'],
             gc_enabled=gc_enabled,
+            classification_enabled=args.classification_enabled,
             receptive_field=WaveNetModel.calculate_receptive_field(wavenet_params["filter_width"],
                                                                    wavenet_params["dilations"],
                                                                    wavenet_params["scalar_input"],
@@ -227,7 +231,7 @@ def main():
             sample_size=args.sample_size,
             silence_threshold=silence_threshold)
         audio_batch = reader.dequeue(args.batch_size)
-        if gc_enabled:
+        if gc_enabled or args.classification_enabled:
             gc_id_batch = reader.dequeue_gc(args.batch_size)
         else:
             gc_id_batch = None
@@ -246,7 +250,8 @@ def main():
         initial_filter_width=wavenet_params["initial_filter_width"],
         histograms=args.histograms,
         global_condition_channels=args.gc_channels,
-        global_condition_cardinality=reader.gc_category_cardinality)
+        global_condition_cardinality=reader.gc_category_cardinality,
+        n_classes=reader.gc_category_cardinality)
 
     if args.l2_regularization_strength == 0:
         args.l2_regularization_strength = None

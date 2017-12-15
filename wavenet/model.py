@@ -56,7 +56,8 @@ class WaveNetModel(object):
                  initial_filter_width=32,
                  histograms=False,
                  global_condition_channels=None,
-                 global_condition_cardinality=None):
+                 global_condition_cardinality=None,
+                 n_classes=None):
         '''Initializes the WaveNet model.
 
         Args:
@@ -108,6 +109,8 @@ class WaveNetModel(object):
         self.histograms = histograms
         self.global_condition_channels = global_condition_channels
         self.global_condition_cardinality = global_condition_cardinality
+        self.n_classes = n_classes
+        self.do_classification = n_classes is not None
 
         self.receptive_field = WaveNetModel.calculate_receptive_field(
             self.filter_width, self.dilations, self.scalar_input,
@@ -222,6 +225,9 @@ class WaveNetModel(object):
                 current['postprocess2'] = create_variable(
                     'postprocess2',
                     [1, self.skip_channels, self.quantization_channels])
+                current['postprocess3'] = create_variable(
+                    'postprocess3',
+                    [1, self.skip_channels, self.n_classes])
                 if self.use_biases:
                     current['postprocess1_bias'] = create_bias_variable(
                         'postprocess1_bias',
@@ -229,6 +235,9 @@ class WaveNetModel(object):
                     current['postprocess2_bias'] = create_bias_variable(
                         'postprocess2_bias',
                         [self.quantization_channels])
+                    current['postprocess3_bias'] = create_bias_variable(
+                        'postprocess3_bias',
+                        [self.n_classes])
                 var['postprocessing'] = current
 
         return var
@@ -424,6 +433,10 @@ class WaveNetModel(object):
             if self.use_biases:
                 b1 = self.variables['postprocessing']['postprocess1_bias']
                 b2 = self.variables['postprocessing']['postprocess2_bias']
+            if self.do_classification:
+                w3 = self.variables['postprocessing']['postprocess3']
+                if self.use_biases:
+                    b3 = self.variables['postprocessing']['postprocess3_bias']
 
             if self.histograms:
                 tf.histogram_summary('postprocess1_weights', w1)
@@ -443,6 +456,12 @@ class WaveNetModel(object):
             conv2 = tf.nn.conv1d(transformed2, w2, stride=1, padding="SAME")
             if self.use_biases:
                 conv2 = tf.add(conv2, b2)
+
+            conv3 = None
+            if self.do_classification:
+                conv3 = tf.nn.conv1d(transformed2, w3, stride=1, padding="SAME")
+                if self.use_biases:
+                    conv3 = tf.add(conv2, b3)
 
         return conv2
 
@@ -633,7 +652,8 @@ class WaveNetModel(object):
             encoded_input = mu_law_encode(input_batch,
                                           self.quantization_channels)
 
-            gc_embedding = self._embed_gc(global_condition_batch)
+            if not self.do_classification:
+                gc_embedding = self._embed_gc(global_condition_batch)
             encoded = self._one_hot(encoded_input)
             if self.scalar_input:
                 network_input = tf.reshape(
@@ -647,7 +667,7 @@ class WaveNetModel(object):
             network_input = tf.slice(network_input, [0, 0, 0],
                                      [-1, network_input_width, -1])
 
-            raw_output = self._create_network(network_input, gc_embedding)
+            raw_output, class_output = self._create_network(network_input, gc_embedding)
 
             with tf.name_scope('loss'):
                 # Cut off the samples corresponding to the receptive field
@@ -665,9 +685,23 @@ class WaveNetModel(object):
                 loss = tf.nn.softmax_cross_entropy_with_logits(
                     logits=prediction,
                     labels=target_output)
-                reduced_loss = tf.reduce_mean(loss)
 
+                reduced_loss = tf.reduce_mean(loss)
                 tf.summary.scalar('loss', reduced_loss)
+
+                if self.do_classification:
+                    gt_output = tf.reshape(gt_output,
+                                           [-1, self.n_classes])
+                    class_pred = tf.reshape(class_output,
+                                            [-1, self.n_classes])
+                    class_loss += tf.nn.softmax_cross_entropy_with_logits(
+                        logits=class_pred,
+                        labels=gt_output)
+
+                    reduced_loss = tf.reduce_mean(class_loss)
+                    tf.summary.scalar('class_loss', reduced_loss)
+                    reduced_loss = tf.reduce_mean(loss + class_loss)
+                    tf.summary.scalar('total_loss', reduced_loss)
 
                 if l2_regularization_strength is None:
                     return reduced_loss
