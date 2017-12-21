@@ -665,7 +665,8 @@ class WaveNetModel(object):
             encoded_input = mu_law_encode(input_batch,
                                           self.quantization_channels)
 
-            gc_embedding = self._embed_gc(global_condition_batch)
+            if not self.do_classification:
+                gc_embedding = self._embed_gc(global_condition_batch)
             encoded = self._one_hot(encoded_input)
             if self.scalar_input:
                 network_input = tf.reshape(
