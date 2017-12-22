@@ -708,9 +708,9 @@ class WaveNetModel(object):
                 if self.do_classification:
                     all_ones = class_output[:, :, 0]
                     all_ones = tf.cast((all_ones * 0 + 1), tf.int32)
-                    to_ids = tf.transpose(all_ones) * (global_condition_batch - 255)
+                    to_ids = tf.transpose(all_ones) * (global_condition_batch - 10)
                     to_ids = tf.transpose(to_ids)
-                    to_ids = tf.one_hot(to_ids, 151)
+                    to_ids = tf.one_hot(to_ids, 50)
                     gt_output = tf.reshape(to_ids,
                                            [-1, self.n_classes])
                     class_pred = tf.reshape(class_output,

@@ -9,6 +9,7 @@ import numpy as np
 import tensorflow as tf
 
 FILE_PATTERN = r'p([0-9]+)_([0-9]+)\.wav'
+FILE_PATTERN = r'([0-9]+)-([A-Za-z-]+)\.wav'
 
 
 def get_category_cardinality(files):
@@ -17,7 +18,8 @@ def get_category_cardinality(files):
     max_id = None
     for filename in files:
         matches = id_reg_expression.findall(filename)[0]
-        id, recording_id = [int(id_) for id_ in matches]
+        # id, recording_id = [int(id_) for id_ in matches]
+        id = int(matches[0])
         if min_id is None or id < min_id:
             min_id = id
         if max_id is None or id > max_id:
@@ -135,7 +137,7 @@ class AudioReader(object):
             _, self.gc_category_cardinality = get_category_cardinality(files)
             if self.classification_enabled:
                 _min, _max = get_category_cardinality(files)
-                self.gc_category_cardinality = int(_max - _min - 1)
+                self.gc_category_cardinality = int(_max - _min)
             # Add one to the largest index to get the number of categories,
             # since tf.nn.embedding_lookup expects zero-indexing. This
             # means one or more at the bottom correspond to unused entries
