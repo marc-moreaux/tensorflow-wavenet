@@ -225,12 +225,13 @@ class WaveNetModel(object):
                 current['postprocess2'] = create_variable(
                     'postprocess2',
                     [1, self.skip_channels, self.quantization_channels])
-                current['postprocess3'] = create_variable(
-                    'postprocess3',
-                    [1, self.skip_channels, self.skip_channels])
-                current['postprocess4'] = create_variable(
-                    'postprocess4',
-                    [1, self.skip_channels, self.n_classes])
+                if self.do_classification:
+                    current['postprocess3'] = create_variable(
+                        'postprocess3',
+                        [1, self.skip_channels, self.skip_channels])
+                    current['postprocess4'] = create_variable(
+                        'postprocess4',
+                        [1, self.skip_channels, self.n_classes])
                 if self.use_biases:
                     current['postprocess1_bias'] = create_bias_variable(
                         'postprocess1_bias',
@@ -238,12 +239,13 @@ class WaveNetModel(object):
                     current['postprocess2_bias'] = create_bias_variable(
                         'postprocess2_bias',
                         [self.quantization_channels])
-                    current['postprocess3_bias'] = create_bias_variable(
-                        'postprocess3_bias',
-                        [self.skip_channels])
-                    current['postprocess4_bias'] = create_bias_variable(
-                        'postprocess4_bias',
-                        [self.n_classes])
+                    if self.do_classification:
+                        current['postprocess3_bias'] = create_bias_variable(
+                            'postprocess3_bias',
+                            [self.skip_channels])
+                        current['postprocess4_bias'] = create_bias_variable(
+                            'postprocess4_bias',
+                            [self.n_classes])
                 var['postprocessing'] = current
 
         return var
@@ -465,7 +467,7 @@ class WaveNetModel(object):
             if self.use_biases:
                 conv2 = tf.add(conv2, b2)
 
-            conv3 = None
+            conv2_bis = None
             if self.do_classification:
                 transformed1 = tf.nn.selu(total)
                 conv1 = tf.nn.conv1d(transformed1, w3, stride=1, padding="SAME")
