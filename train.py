@@ -104,8 +104,7 @@ def get_arguments():
                         help='Maximum amount of checkpoints that will be kept alive. Default: '
                              + str(MAX_TO_KEEP) + '.')
     parser.add_argument('--classification_enabled', type=bool, default=False,
-                        help='Train on both prediction and class information. Default: False'
-                             + str(MAX_TO_KEEP) + '.')    
+                        help='Train on both prediction and class information. Default: False')    
     return parser.parse_args()
 
 

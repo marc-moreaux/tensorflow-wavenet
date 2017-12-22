@@ -666,7 +666,7 @@ class WaveNetModel(object):
             # We mu-law encode and quantize the input audioform.
             encoded_input = mu_law_encode(input_batch,
                                           self.quantization_channels)
-
+            gc_embedding = None
             if not self.do_classification:
                 gc_embedding = self._embed_gc(global_condition_batch)
             encoded = self._one_hot(encoded_input)
@@ -726,7 +726,7 @@ class WaveNetModel(object):
                     tf.summary.scalar('class_loss', reduced_c_loss)
                     l2_loss = 1e-4 * (tf.nn.l2_loss(self.variables['postprocessing']['postprocess3']) + 
                                       tf.nn.l2_loss(self.variables['postprocessing']['postprocess4']))
-                    loss = .9 * loss + .1 * class_loss + l2_loss
+                    loss = loss + class_loss + l2_loss
                     reduced_loss = tf.reduce_mean(loss)
                     tf.summary.scalar('total_loss', reduced_loss)
 
