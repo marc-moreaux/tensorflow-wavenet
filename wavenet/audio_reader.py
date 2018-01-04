@@ -9,7 +9,7 @@ import numpy as np
 import tensorflow as tf
 
 FILE_PATTERN = r'p([0-9]+)_([0-9]+)\.wav'
-FILE_PATTERN = r'([0-9]+)-([A-Za-z-]+)\.wav'
+FILE_PATTERN = r'([0-9]+)-([A-Za-z-]+)_([0-9]+)\.wav'
 
 
 def get_category_cardinality(files):
