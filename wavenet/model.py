@@ -706,6 +706,7 @@ class WaveNetModel(object):
                 tf.summary.scalar('loss', reduced_loss)
 
                 if self.do_classification:
+                    # Get ground truth
                     all_ones = class_output[:, :, 0]
                     all_ones = tf.cast((all_ones * 0 + 1), tf.int32)
                     to_ids = tf.transpose(all_ones) * (global_condition_batch - 10)
@@ -719,11 +720,15 @@ class WaveNetModel(object):
                         logits=class_pred,
                         labels=gt_output,
                         name='classification_loss')
+                    correct_prediction = tf.equal(tf.argmax(class_pred,1),
+                                                  tf.argmax(gt_output,1))
+                    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
                     self.gt_output = gt_output
                     self.class_pred = class_pred
 
                     reduced_c_loss = tf.reduce_mean(class_loss)
                     tf.summary.scalar('class_loss', reduced_c_loss)
+                    tf.summary.scalar('accuracy', accuracy)
                     l2_loss = 1e-4 * (tf.nn.l2_loss(self.variables['postprocessing']['postprocess3']) + 
                                       tf.nn.l2_loss(self.variables['postprocessing']['postprocess4']))
                     loss = loss + class_loss + l2_loss
